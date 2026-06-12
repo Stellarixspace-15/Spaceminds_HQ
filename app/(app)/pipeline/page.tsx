@@ -14,20 +14,27 @@ export default function PipelinePage() {
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [errMsg, setErrMsg] = useState('')
   const supabase = createClient()
 
   useEffect(() => { load() }, [])
 
-  async function load() {
+  async function load(selectId?: string) {
     setLoading(true)
     const [pR, sR] = await Promise.all([
       supabase.from('programs').select('*').eq('is_active', true),
       supabase.from('schools').select('*, programs(*)'),
     ])
     const ps = pR.data || []
+    const allSchools = sR.data || []
     setPrograms(ps)
-    setSchools(sR.data || [])
+    setSchools(allSchools)
     if (ps.length && !prog) setProg(ps[0])
+    // Refresh the selected school so the panel shows latest data
+    if (selectId) {
+      const fresh = allSchools.find((x: School) => x.id === selectId)
+      if (fresh) setSchool(fresh)
+    }
     setLoading(false)
   }
 
@@ -37,29 +44,45 @@ export default function PipelinePage() {
   async function advance(s: School, toStep: number) {
     if (!profile || !prog) return
     setSaving(true)
+    setErrMsg('')
     const isLast = toStep > steps.length
-    await supabase.from('schools').update({
+
+    // 1. Update Supabase — check for errors AND silent RLS blocks
+    const { data: updated, error: updateError } = await supabase.from('schools').update({
       pipeline_step: isLast ? steps.length : toStep,
       pipeline_status: isLast ? 'Completed' : 'In Progress',
-    }).eq('id', s.id)
+    }).eq('id', s.id).select()
 
+    if (updateError) {
+      setErrMsg(`Save failed: ${updateError.message}`)
+      setSaving(false)
+      return
+    }
+    if (!updated || updated.length === 0) {
+      setErrMsg('Save blocked — you do not have permission to update this school.')
+      setSaving(false)
+      return
+    }
+
+    // 2. Log history (non-blocking)
     await supabase.from('pipeline_history').insert({
-      school_id: s.id, from_step: s.pipeline_step, to_step: toStep,
+      school_id: s.id, from_step: s.pipeline_step, to_step: Math.min(toStep, steps.length),
       changed_by: profile.email, notes: note || null,
     })
 
+    // 3. Push to Google Sheets (non-blocking — portal is source of truth here)
     if (s.sheet_row_index) {
-      await fetch('/api/sheets/update', {
+      fetch('/api/sheets/update', {
         method: 'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           tabName: prog.sheet_tab_name, rowIndex: s.sheet_row_index,
-          data: { pipeline_step: String(toStep), pipeline_status: isLast ? 'Completed' : 'In Progress' },
+          data: { pipeline_step: String(Math.min(toStep, steps.length)), pipeline_status: isLast ? 'Completed' : 'In Progress' },
         }),
-      })
+      }).catch(() => {})
     }
 
     setNote('')
-    await load()
+    await load(s.id)  // reload AND refresh the selected school panel
     setSaving(false)
   }
 
@@ -119,7 +142,7 @@ export default function PipelinePage() {
                 No schools in this program.<br/>Sync your Google Sheet first.
               </div>
             ) : filtered.map(s => (
-              <button key={s.id} onClick={() => setSchool(s)} style={{
+              <button key={s.id} onClick={() => { setSchool(s); setErrMsg('') }} style={{
                 width:'100%', textAlign:'left', background: school?.id===s.id ? 'rgba(99,102,241,0.08)' : 'transparent',
                 border:'none', borderBottom:'1px solid rgba(255,255,255,0.04)',
                 padding:'11px 16px', cursor:'pointer', fontFamily:'var(--font)',
@@ -165,9 +188,19 @@ export default function PipelinePage() {
               </div>
 
               <div style={{maxHeight:'calc(100vh - 280px)',overflowY:'auto',padding:'4px 0'}}>
+                {errMsg && (
+                  <div style={{
+                    margin:'10px 22px', padding:'9px 13px', borderRadius:8,
+                    background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.25)',
+                    color:'#fca5a5', fontSize:'0.82rem',
+                  }}>
+                    {errMsg}
+                  </div>
+                )}
                 {steps.map(step => {
-                  const done = step.step < school.pipeline_step
-                  const current = step.step === school.pipeline_step
+                  const isCompleted = school.pipeline_status === 'Completed'
+                  const done = step.step < school.pipeline_step || (isCompleted && step.step <= school.pipeline_step)
+                  const current = !isCompleted && step.step === school.pipeline_step
                   const ok = current && canAdvance(school)
                   return (
                     <div key={step.step} style={{
