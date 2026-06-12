@@ -23,8 +23,10 @@ export async function readSheetTab(tabName: string) {
   const rows = res.data.values || []
   if (rows.length <= 1) return []
 
-  return rows.slice(1).map((row, idx) => {
-    const obj: Record<string, string> = {}
+  type SheetRowWithIndex = Record<typeof SHEET_COLUMNS[number], string> & { _rowIndex: number }
+
+  return rows.slice(1).map((row, idx): SheetRowWithIndex => {
+    const obj = {} as Record<typeof SHEET_COLUMNS[number], string>
     SHEET_COLUMNS.forEach((col, i) => { obj[col] = row[i] ?? '' })
     return { ...obj, _rowIndex: idx + 2 }
   }).filter(r => r.school_id)
