@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { updateSheetRow } from '@/lib/google-sheets'
+import { updateProgramRow, updateStudentRow } from '@/lib/google-sheets'
+import { STUDENTS_TAB } from '@/lib/types'
 
 export async function POST(req: NextRequest) {
   const supabase = createClient()
@@ -10,11 +11,19 @@ export async function POST(req: NextRequest) {
   const { data: profile } = await supabase.from('allowed_users').select('role').eq('email', user.email).single()
   if (!profile) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { tabName, rowIndex, data } = await req.json()
-  if (!tabName || !rowIndex) return NextResponse.json({ error: 'Missing tabName or rowIndex' }, { status: 400 })
+  const { type, tabName, rowIndex, data } = await req.json()
+  if (!rowIndex) return NextResponse.json({ error: 'Missing rowIndex' }, { status: 400 })
 
   try {
-    await updateSheetRow(tabName, rowIndex, data)
+    if (type === 'student') {
+      if (!['admin', 'admin_staff'].includes(profile.role)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      await updateStudentRow(STUDENTS_TAB, rowIndex, data)
+    } else {
+      if (!tabName) return NextResponse.json({ error: 'Missing tabName' }, { status: 400 })
+      await updateProgramRow(tabName, rowIndex, data)
+    }
     return NextResponse.json({ success: true })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

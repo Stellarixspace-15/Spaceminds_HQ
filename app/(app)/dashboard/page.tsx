@@ -64,7 +64,7 @@ export default function DashboardPage() {
             Welcome back, {profile?.full_name?.split(' ')[0]} 👋
           </p>
         </div>
-        {(role === 'admin' || role === 'founder') && (
+        {(role === 'admin' || role === 'founder' || role === 'admin_staff') && (
           <div style={{display:'flex', alignItems:'center', gap:10}}>
             {syncMsg && (
               <span style={{fontSize:'0.8rem', color: syncMsg.includes('fail') ? '#fca5a5' : '#6ee7b7'}}>{syncMsg}</span>

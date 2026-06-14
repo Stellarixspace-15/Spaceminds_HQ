@@ -38,7 +38,11 @@ export default function PipelinePage() {
     setLoading(false)
   }
 
-  const filtered = schools.filter(s => s.program_id === prog?.id)
+  const [catFilter, setCatFilter] = useState<string>('All')
+  const categories = Array.from(new Set(schools.map(s => s.category).filter(Boolean))) as string[]
+  const filtered = schools.filter(s =>
+    s.program_id === prog?.id && (catFilter === 'All' || s.category === catFilter)
+  )
   const steps = prog?.sop_steps || []
 
   async function advance(s: School, toStep: number) {
@@ -125,6 +129,22 @@ export default function PipelinePage() {
           )
         })}
       </div>
+
+      {/* Category filter chips */}
+      {categories.length > 0 && (
+        <div style={{display:'flex', gap:6, marginBottom:20, flexWrap:'wrap', alignItems:'center'}}>
+          <span style={{fontSize:'0.72rem',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',marginRight:4}}>Category:</span>
+          {['All', ...categories].map(cat => (
+            <button key={cat} onClick={() => setCatFilter(cat)} style={{
+              padding:'4px 11px', borderRadius:99, cursor:'pointer', fontFamily:'var(--font)',
+              fontSize:'0.78rem', fontWeight:600,
+              background: catFilter===cat ? 'rgba(99,102,241,0.15)' : 'transparent',
+              border: `1px solid ${catFilter===cat ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              color: catFilter===cat ? '#a5b4fc' : 'var(--text-2)',
+            }}>{cat}</button>
+          ))}
+        </div>
+      )}
 
       <div style={{display:'grid', gridTemplateColumns:'290px 1fr', gap:16}}>
         {/* School list */}
